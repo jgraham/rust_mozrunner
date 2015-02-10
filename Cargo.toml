@@ -1,0 +1,8 @@
+[package]
+
+name = "mozrunner"
+version = "0.0.1"
+authors = ["James Graham <james@hoppipolla.co.uk>"]
+
+[dependencies.mozprofile]
+path = "../rust_mozprofile"
