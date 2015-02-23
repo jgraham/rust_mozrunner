@@ -1,5 +1,5 @@
-use std::io::{process, IoResult};
-use std::path::Path;
+use std::old_io::{process, IoResult};
+use std::old_path::Path;
 
 use mozprofile::profile::Profile;
 use mozprofile::preferences::FIREFOX_PREFERENCES;
@@ -43,7 +43,7 @@ impl Runner for FirefoxRunner {
     fn command(&self) -> process::Command {
         // TODO: Make sure [-]-foreground is the last arg if present and is
         // always present on OSX
-        process::Command::new(self.binary.clone()).arg("--profile").arg(self.profile.path.clone()).args(self.args.as_slice()).clone()
+        process::Command::new(self.binary.clone()).arg("--profile").arg(self.profile.path.clone()).args(&self.args[..]).clone()
     }
 
     fn start(&mut self) -> IoResult<()> {
@@ -53,7 +53,7 @@ impl Runner for FirefoxRunner {
 
         self.profile.preferences.insert_vec(&FIREFOX_PREFERENCES);
 
-        self.profile.write_prefs();
+        try!(self.profile.write_prefs());
 
         let process = try!(cmd.spawn());
         self.process = Some(process);
