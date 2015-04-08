@@ -6,3 +6,6 @@ authors = ["James Graham <james@hoppipolla.co.uk>"]
 
 [dependencies.mozprofile]
 git = "http://github.com/jgraham/rust_mozprofile.git"
+
+[dependencies]
+log = "0.3.1"

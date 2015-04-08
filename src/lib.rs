@@ -1,5 +1,7 @@
-#![feature(old_io)]
-#![feature(old_path)]
+#![feature(io)]
+#![feature(path)]
+#[macro_use]
+extern crate log;
 extern crate mozprofile;
 
 pub mod runner;
@@ -8,12 +10,11 @@ pub mod runner;
 mod test {
     use runner::Runner;
 
-    use std::old_path::Path;
-    use std::str::FromStr;
+    use std::path::Path;
 
     #[test]
     fn it_works() {
-        let path: Path = FromStr::from_str("/home/jgraham/develop/gecko/obj-x86_64-unknown-linux-gnu/dist/bin/firefox/").unwrap();
+        let path = Path::new("/home/jgraham/develop/gecko/obj-x86_64-unknown-linux-gnu/dist/bin/firefox/").unwrap();
         let mut fx_runner = runner::FirefoxRunner::new(path, None).unwrap();
         fx_runner.start();
     }
