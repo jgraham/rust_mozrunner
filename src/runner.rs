@@ -1,19 +1,63 @@
 use std::process;
 use std::process::{Command, Stdio};
-use std::io::Result as IoResult;
+use std::io::{Result as IoResult, Error as IoError};
 use std::path::{Path, PathBuf};
+use std::error::Error;
+use std::convert::From;
+use std::fmt;
 
 use mozprofile::profile::Profile;
-use mozprofile::preferences::FIREFOX_PREFERENCES;
+use mozprofile::prefdata::FIREFOX_PREFERENCES;
+use mozprofile::prefreader::PrefReaderError;
 
 pub trait Runner {
-    fn start(&mut self) -> IoResult<()>;
+    fn start(&mut self) -> Result<(), RunnerError>;
 
     fn build_command(&self, &mut Command);
 
     fn is_running(&self) -> bool;
 
     fn stop(&mut self) -> IoResult<Option<process::ExitStatus>>;
+}
+
+#[derive(Debug)]
+pub enum RunnerError {
+    Io(IoError),
+    PrefReader(PrefReaderError)
+}
+
+impl fmt::Display for RunnerError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.description().fmt(f)
+    }
+}
+
+impl Error for RunnerError {
+    fn description(&self) -> &str {
+        match *self {
+            RunnerError::Io(ref err) => err.description().clone(),
+            RunnerError::PrefReader(ref err) => err.description().clone(),
+        }
+    }
+
+    fn cause(&self) -> Option<&Error> {
+        match *self {
+            RunnerError::Io(ref err) => err.cause(),
+            RunnerError::PrefReader(ref err) => err.cause(),
+        }
+    }
+}
+
+impl From<IoError> for RunnerError {
+    fn from(value: IoError) -> RunnerError {
+        RunnerError::Io(value)
+    }
+}
+
+impl From<PrefReaderError> for RunnerError {
+    fn from(value: PrefReaderError) -> RunnerError {
+        RunnerError::PrefReader(value)
+    }
 }
 
 pub struct FirefoxRunner {
@@ -42,13 +86,14 @@ impl FirefoxRunner {
 }
 
 impl Runner for FirefoxRunner {
-    fn start(&mut self) -> IoResult<()> {
+    fn start(&mut self) -> Result<(), RunnerError> {
         let mut cmd = Command::new(&self.binary);
         self.build_command(&mut cmd);
 
-        self.profile.preferences.insert_vec(&FIREFOX_PREFERENCES);
+        let mut prefs = try!(self.profile.user_prefs());
+        prefs.insert_slice(&FIREFOX_PREFERENCES[..]);
 
-        try!(self.profile.write_prefs());
+        try!(prefs.write());
 
         let process = try!(cmd.spawn());
         self.process = Some(process);
