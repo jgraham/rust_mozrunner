@@ -13,6 +13,8 @@ use mozprofile::prefreader::PrefReaderError;
 pub trait Runner {
     fn start(&mut self) -> Result<(), RunnerError>;
 
+    fn args(&mut self) -> &mut Vec<String>;
+
     fn build_command(&self, &mut Command);
 
     fn is_running(&self) -> bool;
@@ -98,6 +100,10 @@ impl Runner for FirefoxRunner {
         let process = try!(cmd.spawn());
         self.process = Some(process);
         Ok(())
+    }
+
+    fn args(&mut self) -> &mut Vec<String> {
+        &mut self.args
     }
 
     fn build_command(&self, command: &mut Command) {
