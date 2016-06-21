@@ -1,11 +1,11 @@
-use std::process;
-use std::process::{Command, Stdio};
+use std::convert::From;
+use std::env;
+use std::error::Error;
+use std::fmt;
 use std::io::{Result as IoResult, Error as IoError};
 use std::path::{Path, PathBuf};
-use std::error::Error;
-use std::convert::From;
-use std::fmt;
-
+use std::process::{Command, Stdio};
+use std::process;
 use mozprofile::profile::Profile;
 use mozprofile::prefdata::FIREFOX_PREFERENCES;
 use mozprofile::prefreader::PrefReaderError;
@@ -126,5 +126,109 @@ impl Runner for FirefoxRunner {
             None => {}
         };
         Ok(self.ret_code)
+    }
+}
+
+fn find_binary(name: &str) -> Option<PathBuf> {
+    env::var("PATH")
+        .ok()
+        .and_then(|path_env| {
+            for mut path in env::split_paths(&*path_env) {
+                path.push(name);
+                if path.exists() {
+                    return Some(path)
+                }
+            }
+            None
+        })
+}
+
+#[cfg(target_os = "linux")]
+pub mod platform {
+    use super::find_binary;
+    use std::path::PathBuf;
+
+    pub fn firefox_default_path() -> Option<PathBuf> {
+        find_binary("firefox")
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub mod platform {
+    use super::find_binary;
+    use std::env;
+    use std::path::PathBuf;
+
+    pub fn firefox_default_path() -> Option<PathBuf> {
+        let home = env::home_dir();
+        for &(prefix_home, trial_path) in [
+            (false, "/Applications/Firefox.app/Contents/MacOS/firefox-bin"),
+            (true, "Applications/Firefox.app/Contents/MacOS/firefox-bin")].iter() {
+            let path = match (home.as_ref(), prefix_home) {
+                (Some(ref home_dir), true) => home_dir.join(trial_path),
+                (None, true) => continue,
+                (_, false) => PathBuf::from(trial_path)
+            };
+            if path.exists() {
+                return Some(path)
+            }
+        }
+        find_binary("firefox-bin")
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub mod platform {
+    use super::find_binary;
+    use std::io::Error;
+    use std::path::PathBuf;
+    use winreg::RegKey;
+    use winreg::enums::*;
+
+    pub fn firefox_default_path() -> Option<PathBuf> {
+        let opt_path = firefox_registry_path().unwrap_or(None);
+        if let Some(path) = opt_path {
+            if path.exists() {
+                return Some(path)
+            }
+        };
+        find_binary("firefox.exe")
+    }
+
+    fn firefox_registry_path() -> Result<Option<PathBuf>, Error> {
+        let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+        for subtree_key in ["SOFTWARE", "SOFTWARE\\WOW6432Node"].iter() {
+            let subtree = try!(hklm.open_subkey_with_flags(subtree_key, KEY_READ));
+            let mozilla_org = try!(subtree.open_subkey_with_flags("mozilla.org\\Mozilla", KEY_READ));
+            let current_version: String = try!(mozilla_org.get_value("CurrentVersion"));
+            let mozilla = try!(subtree.open_subkey_with_flags("Mozilla", KEY_READ));
+            for key_res in mozilla.enum_keys() {
+                let key = try!(key_res);
+                let section_data = try!(mozilla.open_subkey_with_flags(&key, KEY_READ));
+                let version: Result<String, _> = section_data.get_value("GeckoVer");
+                if let Ok(ver) = version {
+                    if ver == current_version {
+                        let mut bin_key = key.to_owned();
+                        bin_key.push_str("\\bin");
+                        if let Ok(bin_subtree) = mozilla.open_subkey_with_flags(bin_key, KEY_READ) {
+                            let path: Result<String, _> = bin_subtree.get_value("PathToExe");
+                            if let Ok(path) = path {
+                                return Ok(Some(PathBuf::from(path)))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(None)
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+pub mod platform {
+    use std::path::PathBuf;
+
+    pub fn firefox_default_path() -> Option<PathBuf> {
+        None
     }
 }
