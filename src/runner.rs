@@ -204,7 +204,10 @@ pub mod platform {
         let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
         for subtree_key in ["SOFTWARE", "SOFTWARE\\WOW6432Node"].iter() {
             let subtree = try!(hklm.open_subkey_with_flags(subtree_key, KEY_READ));
-            let mozilla_org = try!(subtree.open_subkey_with_flags("mozilla.org\\Mozilla", KEY_READ));
+            let mozilla_org = match subtree.open_subkey_with_flags("mozilla.org\\Mozilla", KEY_READ) {
+                Ok(val) => val,
+                Err(_) => continue
+            };
             let current_version: String = try!(mozilla_org.get_value("CurrentVersion"));
             let mozilla = try!(subtree.open_subkey_with_flags("Mozilla", KEY_READ));
             for key_res in mozilla.enum_keys() {
