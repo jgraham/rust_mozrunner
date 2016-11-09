@@ -1,14 +1,14 @@
+use mozprofile::prefdata::FIREFOX_PREFERENCES;
+use mozprofile::prefreader::PrefReaderError;
+use mozprofile::profile::Profile;
 use std::convert::From;
 use std::env;
 use std::error::Error;
 use std::fmt;
-use std::io::{Result as IoResult, Error as IoError};
+use std::io::{Result as IoResult, Error as IoError, ErrorKind};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::process;
-use mozprofile::profile::Profile;
-use mozprofile::prefdata::FIREFOX_PREFERENCES;
-use mozprofile::prefreader::PrefReaderError;
+use std::process::{Command, Stdio};
 
 pub trait Runner {
     fn start(&mut self) -> Result<(), RunnerError>;
@@ -25,7 +25,7 @@ pub trait Runner {
 #[derive(Debug)]
 pub enum RunnerError {
     Io(IoError),
-    PrefReader(PrefReaderError)
+    PrefReader(PrefReaderError),
 }
 
 impl fmt::Display for RunnerError {
@@ -37,16 +37,21 @@ impl fmt::Display for RunnerError {
 impl Error for RunnerError {
     fn description(&self) -> &str {
         match *self {
-            RunnerError::Io(ref err) => err.description().clone(),
-            RunnerError::PrefReader(ref err) => err.description().clone(),
+            RunnerError::Io(ref err) => {
+                match err.kind() {
+                    ErrorKind::NotFound => "no such file or directory",
+                    _ => err.description(),
+                }
+            }
+            RunnerError::PrefReader(ref err) => err.description(),
         }
     }
 
     fn cause(&self) -> Option<&Error> {
-        match *self {
-            RunnerError::Io(ref err) => err.cause(),
-            RunnerError::PrefReader(ref err) => err.cause(),
-        }
+        Some(match *self {
+            RunnerError::Io(ref err) => err as &Error,
+            RunnerError::PrefReader(ref err) => err as &Error,
+        })
     }
 }
 
