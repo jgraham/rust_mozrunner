@@ -165,6 +165,9 @@ pub mod platform {
     use std::path::PathBuf;
 
     pub fn firefox_default_path() -> Option<PathBuf> {
+        if let Some(path) = find_binary("firefox-bin") {
+            return Some(path)
+        }
         let home = env::home_dir();
         for &(prefix_home, trial_path) in [
             (false, "/Applications/Firefox.app/Contents/MacOS/firefox-bin"),
@@ -178,7 +181,7 @@ pub mod platform {
                 return Some(path)
             }
         }
-        find_binary("firefox-bin")
+        None
     }
 }
 
