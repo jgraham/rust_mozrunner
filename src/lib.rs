@@ -1,4 +1,3 @@
-#[macro_use]
 extern crate log;
 extern crate mozprofile;
 #[cfg(target_os = "windows")]
