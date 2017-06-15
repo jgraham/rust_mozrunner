@@ -117,7 +117,7 @@ impl Runner for FirefoxRunner {
             .env("NO_EM_RESTART", "1")
             .args(&self.args[..]);
 
-        if !self.args.iter().any(|x| is_profile_arg(x)) {
+        if !self.args.iter().any(|x| check_arg(x, &["profile", "p", "profilemanager"])) {
             command.arg("-profile").arg(&self.profile.path);
         }
         command.stdout(Stdio::inherit())
@@ -177,16 +177,16 @@ fn name_end_char(c: char) -> bool {
     c == ' ' || c == '='
 }
 
-/// Check if an argument string affects the Firefox profile
+/// Check if a command line argument is one of a given set
 ///
-/// Returns a boolean indicating whether a given string
-/// contains one of the `-P`, `-Profile` or `-ProfileManager`
-/// arguments, respecting the various platform-specific conventions.
-pub fn is_profile_arg(arg: &str) -> bool {
+/// Takes a single command line argument `arg` and returns
+/// true if it is one of the entries in `targets`, or false
+/// otherwise. `arg` is interpreted as a platform-specific
+/// gecko-compatible argument e.g. `-foo` or `/foo` on Windows,
+/// but `targets` are plain names like `foo`.
+pub fn check_arg(arg: &str, targets: &[&str]) -> bool {
     if let Some(name) = parse_arg_name(arg) {
-        name.eq_ignore_ascii_case("profile") ||
-            name.eq_ignore_ascii_case("p") ||
-            name.eq_ignore_ascii_case("profilemanager")
+        targets.iter().any(|x| x.eq_ignore_ascii_case(name))
     } else {
         false
     }
@@ -320,7 +320,7 @@ pub mod platform {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_arg_name, is_profile_arg};
+    use super::{parse_arg_name, check_arg};
 
     fn parse(arg: &str, name: Option<&str>) {
         let result = parse_arg_name(arg);
@@ -362,15 +362,16 @@ mod tests {
     }
 
     #[test]
-    fn test_is_profile_arg() {
-        assert!(is_profile_arg("--profile"));
-        assert!(is_profile_arg("-p"));
-        assert!(is_profile_arg("-PROFILEMANAGER"));
-        assert!(is_profile_arg("-ProfileMANAGER"));
-        assert!(!is_profile_arg("-- profile"));
-        assert!(!is_profile_arg("-profiled"));
-        assert!(!is_profile_arg("-p1"));
-        assert!(is_profile_arg("-p test"));
-        assert!(is_profile_arg("-profile /foo"));
+    fn test_check_arg() {
+        assert!(check_arg("--profile", &["profile"]));
+        assert!(check_arg("-p", &["p"]));
+        assert!(check_arg("-PROFILEMANAGER", &["profilemanager"]));
+        assert!(check_arg("-ProfileMANAGER", &["profilemanager"]));
+        assert!(!check_arg("-- profile", &["profile"]));
+        assert!(!check_arg("-profiled", &["profile"]));
+        assert!(!check_arg("-p1", &["p"]));
+        assert!(check_arg("-p test", &["p"]));
+        assert!(check_arg("-profile /foo", &["profile"]));
+        assert!(check_arg("-profile", &["p", "profile"]));
     }
 }
