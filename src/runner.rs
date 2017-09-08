@@ -106,11 +106,10 @@ impl Runner for FirefoxRunner {
         let mut cmd = Command::new(&self.binary);
         self.build_command(&mut cmd);
 
-        debug!("Command {:?}", cmd);
-
         let prefs = try!(self.profile.user_prefs());
         try!(prefs.write());
 
+        info!("Running command: {:?}", cmd);
         let process = try!(cmd.spawn());
         self.process = Some(process);
         Ok(())
