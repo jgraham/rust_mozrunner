@@ -5,20 +5,45 @@ use std::collections::HashMap;
 use std::convert::From;
 use std::env;
 use std::error::Error;
+use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::io::{Result as IoResult, Error as IoError, ErrorKind};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Child, Stdio};
 use std::process;
-use std::process::{Command, Stdio};
 
 pub trait Runner {
-    fn args(&mut self) -> &mut Vec<String>;
-    fn build_command(&self, &mut Command);
-    fn envs(&mut self) -> &mut HashMap<String, String>;
-    fn is_running(&mut self) -> bool;
-    fn start(&mut self) -> Result<(), RunnerError>;
+    type Process;
+
+    fn arg<'a, S> (&'a mut self, arg: S) -> &'a mut Self where
+        S: AsRef<OsStr>;
+
+    fn args<'a, I, S>(&'a mut self, args: I) -> &'a mut Self where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>;
+
+    fn env<'a, K, V>(&'a mut self, key: K, value: V) -> &'a mut Self where
+        K: AsRef<OsStr>,
+        V: AsRef<OsStr>;
+
+    fn envs<'a, I, K, V>(&'a mut self, envs: I) -> &'a mut Self where
+        I: IntoIterator<Item = (K, V)>,
+        K: AsRef<OsStr>,
+        V: AsRef<OsStr>;
+
+    fn stdout<'a, T>(&'a mut self, stdout: T) -> &'a mut Self where
+        T: Into<Stdio>;
+
+    fn stderr<'a, T>(&'a mut self, stderr: T) -> &'a mut Self where
+        T: Into<Stdio>;
+
+    fn start(self) -> Result<Self::Process, RunnerError>;
+}
+
+pub trait RunnerProcess {
     fn status(&mut self) -> IoResult<Option<process::ExitStatus>>;
-    fn stop(&mut self) -> IoResult<Option<process::ExitStatus>>;
+    fn stop(&mut self) -> IoResult<process::ExitStatus>;
+    fn is_running(&mut self) -> bool;
 }
 
 #[derive(Debug)]
@@ -67,93 +92,139 @@ impl From<PrefReaderError> for RunnerError {
 }
 
 #[derive(Debug)]
+pub struct FirefoxProcess {
+    process: Child
+}
+
+
+impl RunnerProcess for FirefoxProcess {
+    fn status(&mut self) -> IoResult<Option<process::ExitStatus>> {
+        self.process.try_wait()
+    }
+
+    fn is_running(&mut self) -> bool {
+        self.status().unwrap().is_none()
+    }
+
+    fn stop(&mut self) -> IoResult<process::ExitStatus> {
+        self.process.kill()?;
+        self.process.wait()
+    }
+}
+
+#[derive(Debug)]
 pub struct FirefoxRunner {
-    pub binary: PathBuf,
-    args: Vec<String>,
-    envs: HashMap<String, String>,
-    process: Option<process::Child>,
-    pub profile: Profile
+    binary: PathBuf,
+    profile: Profile,
+    args: Vec<OsString>,
+    envs: HashMap<OsString, OsString>,
+    stdout: Option<Stdio>,
+    stderr: Option<Stdio>,
 }
 
 impl FirefoxRunner {
-    pub fn new(binary: &Path, profile: Option<Profile>) -> IoResult<FirefoxRunner> {
-        let prof = match profile {
-            Some(p) => p,
-            None => try!(Profile::new(None))
-        };
+    pub fn new(binary: &Path, profile: Profile) -> FirefoxRunner {
+        let mut envs: HashMap<OsString, OsString> = HashMap::new();
+        envs.insert("MOZ_NO_REMOTE".into(), "1".into());
+        envs.insert("NO_EM_RESTART".into(), "1".into());
 
-        let mut envs = HashMap::new();
-        envs.insert("MOZ_NO_REMOTE".to_string(), "1".to_string());
-        envs.insert("NO_EM_RESTART".to_string(), "1".to_string());
-
-        Ok(FirefoxRunner {
+        FirefoxRunner {
             binary: binary.to_path_buf(),
-            process: None,
-            args: Vec::new(),
             envs: envs,
-            profile: prof
-        })
+            profile: profile,
+            args: vec![],
+            stdout: None,
+            stderr: None,
+        }
     }
 }
 
 impl Runner for FirefoxRunner {
-    fn args(&mut self) -> &mut Vec<String> {
-        &mut self.args
+    type Process = FirefoxProcess;
+
+    fn arg<'a, S> (&'a mut self, arg: S) -> &'a mut FirefoxRunner where
+        S: AsRef<OsStr>
+    {
+        self.args.push((&arg).into());
+        self
     }
 
-    fn build_command(&self, command: &mut Command) {
-        command
-            .args(&self.args[..])
-            .envs(&self.envs);
+    fn args<'a, I, S>(&'a mut self, args: I) -> &'a mut FirefoxRunner where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>
+    {
+        for arg in args {
+            self.args.push((&arg).into());
+        }
+        self
+    }
+
+    fn env<'a, K, V>(&'a mut self, key: K, value: V) -> &'a mut FirefoxRunner where
+        K: AsRef<OsStr>,
+        V: AsRef<OsStr>
+    {
+        self.envs.insert((&key).into(), (&value).into());
+        self
+    }
+
+    fn envs<'a, I, K, V>(&'a mut self, envs: I) -> &'a mut FirefoxRunner where
+        I: IntoIterator<Item = (K, V)>,
+        K: AsRef<OsStr>,
+        V: AsRef<OsStr>
+    {
+        for (key, value) in envs {
+            self.envs.insert((&key).into(), (&value).into());
+        }
+        self
+    }
+
+    fn stdout<'a, T>(&'a mut self, stdout: T) -> &'a mut Self where
+        T: Into<Stdio>
+    {
+        self.stdout = Some(stdout.into());
+        self
+    }
+
+    fn stderr<'a, T>(&'a mut self, stderr: T) -> &'a mut Self where
+        T: Into<Stdio> {
+        self.stderr = Some(stderr.into());
+        self
+    }
+
+    fn start(mut self) -> Result<FirefoxProcess, RunnerError> {
+        let stdout = self.stdout.unwrap_or_else(|| Stdio::inherit());
+        let stderr = self.stderr.unwrap_or_else(|| Stdio::inherit());
+
+        let mut cmd = Command::new(&self.binary);
+        cmd.args(&self.args[..])
+            .envs(&self.envs)
+            .stdout(stdout)
+            .stderr(stderr);
 
         if !self.args.iter().any(|x| is_profile_arg(x)) {
-            command.arg("-profile").arg(&self.profile.path);
+            cmd.arg("-profile").arg(&self.profile.path);
         }
-        command.stdout(Stdio::inherit())
+        cmd.stdout(Stdio::inherit())
             .stderr(Stdio::inherit());
-    }
 
-    fn envs(&mut self) -> &mut HashMap<String, String> {
-        &mut self.envs
-    }
-
-    fn is_running(&mut self) -> bool {
-        self.process.is_some() && self.status().unwrap().is_none()
-    }
-
-    fn start(&mut self) -> Result<(), RunnerError> {
-        let mut cmd = Command::new(&self.binary);
-        self.build_command(&mut cmd);
-
-        let prefs = try!(self.profile.user_prefs());
-        try!(prefs.write());
+        self.profile.user_prefs()?.write()?;
 
         info!("Running command: {:?}", cmd);
-        let process = try!(cmd.spawn());
-        self.process = Some(process);
-        Ok(())
-    }
-
-    fn status(&mut self) -> IoResult<Option<process::ExitStatus>> {
-        self.process.as_mut().map(|p| p.try_wait()).unwrap_or(Ok(None))
-    }
-
-    fn stop(&mut self) -> IoResult<Option<process::ExitStatus>> {
-        let mut retval = None;
-
-        if let Some(ref mut p) = self.process {
-            try!(p.kill());
-            retval = Some(try!(p.wait()));
-        };
-        Ok(retval)
+        let process = cmd.spawn()?;
+        Ok(FirefoxProcess {
+            process: process
+        })
     }
 }
 
-fn parse_arg_name(arg: &str) -> Option<&str> {
+fn parse_arg_name<T>(arg: T) -> Option<String> where T: AsRef<OsStr> {
+    let arg_os_str: &OsStr = arg.as_ref();
+    let arg_str = arg_os_str.to_string_lossy();
+
     let mut start = 0;
     let mut end = 0;
 
-    for (i, c) in arg.chars().enumerate() {
+    for (i, c) in arg_str.chars().enumerate() {
         if i == 0 {
             if !platform::arg_prefix_char(c) {
                 break;
@@ -178,7 +249,7 @@ fn parse_arg_name(arg: &str) -> Option<&str> {
     }
 
     if start > 0 && end > start {
-        Some(&arg[start..end])
+        Some(arg_str[start..end].into())
     } else {
         None
     }
@@ -193,7 +264,7 @@ fn name_end_char(c: char) -> bool {
 /// Returns a boolean indicating whether a given string
 /// contains one of the `-P`, `-Profile` or `-ProfileManager`
 /// arguments, respecting the various platform-specific conventions.
-pub fn is_profile_arg(arg: &str) -> bool {
+pub fn is_profile_arg<T>(arg: T) -> bool where T: AsRef<OsStr> {
     if let Some(name) = parse_arg_name(arg) {
         name.eq_ignore_ascii_case("profile") ||
             name.eq_ignore_ascii_case("p") ||
@@ -335,7 +406,7 @@ mod tests {
 
     fn parse(arg: &str, name: Option<&str>) {
         let result = parse_arg_name(arg);
-        assert_eq!(result, name);
+        assert_eq!(result, name.map(|x| x.to_string()));
     }
 
     #[test]
@@ -374,7 +445,7 @@ mod tests {
 
     #[test]
     fn test_is_profile_arg() {
-        assert!(is_profile_arg("--profile"));
+        assert!(is_profile_arg(&"--profile"));
         assert!(is_profile_arg("-p"));
         assert!(is_profile_arg("-PROFILEMANAGER"));
         assert!(is_profile_arg("-ProfileMANAGER"));
