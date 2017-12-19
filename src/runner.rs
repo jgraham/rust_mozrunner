@@ -7,34 +7,40 @@ use std::env;
 use std::error::Error;
 use std::ffi::{OsStr, OsString};
 use std::fmt;
-use std::io::{Result as IoResult, Error as IoError, ErrorKind};
+use std::io::{Error as IoError, ErrorKind, Result as IoResult};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Child, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::process;
 
 pub trait Runner {
     type Process;
 
-    fn arg<'a, S> (&'a mut self, arg: S) -> &'a mut Self where
+    fn arg<'a, S>(&'a mut self, arg: S) -> &'a mut Self
+    where
         S: AsRef<OsStr>;
 
-    fn args<'a, I, S>(&'a mut self, args: I) -> &'a mut Self where
+    fn args<'a, I, S>(&'a mut self, args: I) -> &'a mut Self
+    where
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>;
 
-    fn env<'a, K, V>(&'a mut self, key: K, value: V) -> &'a mut Self where
+    fn env<'a, K, V>(&'a mut self, key: K, value: V) -> &'a mut Self
+    where
         K: AsRef<OsStr>,
         V: AsRef<OsStr>;
 
-    fn envs<'a, I, K, V>(&'a mut self, envs: I) -> &'a mut Self where
+    fn envs<'a, I, K, V>(&'a mut self, envs: I) -> &'a mut Self
+    where
         I: IntoIterator<Item = (K, V)>,
         K: AsRef<OsStr>,
         V: AsRef<OsStr>;
 
-    fn stdout<'a, T>(&'a mut self, stdout: T) -> &'a mut Self where
+    fn stdout<'a, T>(&'a mut self, stdout: T) -> &'a mut Self
+    where
         T: Into<Stdio>;
 
-    fn stderr<'a, T>(&'a mut self, stderr: T) -> &'a mut Self where
+    fn stderr<'a, T>(&'a mut self, stderr: T) -> &'a mut Self
+    where
         T: Into<Stdio>;
 
     fn start(self) -> Result<Self::Process, RunnerError>;
@@ -61,12 +67,10 @@ impl fmt::Display for RunnerError {
 impl Error for RunnerError {
     fn description(&self) -> &str {
         match *self {
-            RunnerError::Io(ref err) => {
-                match err.kind() {
-                    ErrorKind::NotFound => "no such file or directory",
-                    _ => err.description(),
-                }
-            }
+            RunnerError::Io(ref err) => match err.kind() {
+                ErrorKind::NotFound => "no such file or directory",
+                _ => err.description(),
+            },
             RunnerError::PrefReader(ref err) => err.description(),
         }
     }
@@ -93,9 +97,8 @@ impl From<PrefReaderError> for RunnerError {
 
 #[derive(Debug)]
 pub struct FirefoxProcess {
-    process: Child
+    process: Child,
 }
-
 
 impl RunnerProcess for FirefoxProcess {
     fn status(&mut self) -> IoResult<Option<process::ExitStatus>> {
@@ -142,16 +145,18 @@ impl FirefoxRunner {
 impl Runner for FirefoxRunner {
     type Process = FirefoxProcess;
 
-    fn arg<'a, S> (&'a mut self, arg: S) -> &'a mut FirefoxRunner where
-        S: AsRef<OsStr>
+    fn arg<'a, S>(&'a mut self, arg: S) -> &'a mut FirefoxRunner
+    where
+        S: AsRef<OsStr>,
     {
         self.args.push((&arg).into());
         self
     }
 
-    fn args<'a, I, S>(&'a mut self, args: I) -> &'a mut FirefoxRunner where
+    fn args<'a, I, S>(&'a mut self, args: I) -> &'a mut FirefoxRunner
+    where
         I: IntoIterator<Item = S>,
-        S: AsRef<OsStr>
+        S: AsRef<OsStr>,
     {
         for arg in args {
             self.args.push((&arg).into());
@@ -159,18 +164,20 @@ impl Runner for FirefoxRunner {
         self
     }
 
-    fn env<'a, K, V>(&'a mut self, key: K, value: V) -> &'a mut FirefoxRunner where
+    fn env<'a, K, V>(&'a mut self, key: K, value: V) -> &'a mut FirefoxRunner
+    where
         K: AsRef<OsStr>,
-        V: AsRef<OsStr>
+        V: AsRef<OsStr>,
     {
         self.envs.insert((&key).into(), (&value).into());
         self
     }
 
-    fn envs<'a, I, K, V>(&'a mut self, envs: I) -> &'a mut FirefoxRunner where
+    fn envs<'a, I, K, V>(&'a mut self, envs: I) -> &'a mut FirefoxRunner
+    where
         I: IntoIterator<Item = (K, V)>,
         K: AsRef<OsStr>,
-        V: AsRef<OsStr>
+        V: AsRef<OsStr>,
     {
         for (key, value) in envs {
             self.envs.insert((&key).into(), (&value).into());
@@ -178,15 +185,18 @@ impl Runner for FirefoxRunner {
         self
     }
 
-    fn stdout<'a, T>(&'a mut self, stdout: T) -> &'a mut Self where
-        T: Into<Stdio>
+    fn stdout<'a, T>(&'a mut self, stdout: T) -> &'a mut Self
+    where
+        T: Into<Stdio>,
     {
         self.stdout = Some(stdout.into());
         self
     }
 
-    fn stderr<'a, T>(&'a mut self, stderr: T) -> &'a mut Self where
-        T: Into<Stdio> {
+    fn stderr<'a, T>(&'a mut self, stderr: T) -> &'a mut Self
+    where
+        T: Into<Stdio>,
+    {
         self.stderr = Some(stderr.into());
         self
     }
@@ -204,20 +214,20 @@ impl Runner for FirefoxRunner {
         if !self.args.iter().any(|x| is_profile_arg(x)) {
             cmd.arg("-profile").arg(&self.profile.path);
         }
-        cmd.stdout(Stdio::inherit())
-            .stderr(Stdio::inherit());
+        cmd.stdout(Stdio::inherit()).stderr(Stdio::inherit());
 
         self.profile.user_prefs()?.write()?;
 
         info!("Running command: {:?}", cmd);
         let process = cmd.spawn()?;
-        Ok(FirefoxProcess {
-            process: process
-        })
+        Ok(FirefoxProcess { process: process })
     }
 }
 
-fn parse_arg_name<T>(arg: T) -> Option<String> where T: AsRef<OsStr> {
+fn parse_arg_name<T>(arg: T) -> Option<String>
+where
+    T: AsRef<OsStr>,
+{
     let arg_os_str: &OsStr = arg.as_ref();
     let arg_str = arg_os_str.to_string_lossy();
 
@@ -264,28 +274,28 @@ fn name_end_char(c: char) -> bool {
 /// Returns a boolean indicating whether a given string
 /// contains one of the `-P`, `-Profile` or `-ProfileManager`
 /// arguments, respecting the various platform-specific conventions.
-pub fn is_profile_arg<T>(arg: T) -> bool where T: AsRef<OsStr> {
+pub fn is_profile_arg<T>(arg: T) -> bool
+where
+    T: AsRef<OsStr>,
+{
     if let Some(name) = parse_arg_name(arg) {
-        name.eq_ignore_ascii_case("profile") ||
-            name.eq_ignore_ascii_case("p") ||
-            name.eq_ignore_ascii_case("profilemanager")
+        name.eq_ignore_ascii_case("profile") || name.eq_ignore_ascii_case("p")
+            || name.eq_ignore_ascii_case("profilemanager")
     } else {
         false
     }
 }
 
 fn find_binary(name: &str) -> Option<PathBuf> {
-    env::var("PATH")
-        .ok()
-        .and_then(|path_env| {
-            for mut path in env::split_paths(&*path_env) {
-                path.push(name);
-                if path.exists() {
-                    return Some(path)
-                }
+    env::var("PATH").ok().and_then(|path_env| {
+        for mut path in env::split_paths(&*path_env) {
+            path.push(name);
+            if path.exists() {
+                return Some(path);
             }
-            None
-        })
+        }
+        None
+    })
 }
 
 #[cfg(target_os = "linux")]
@@ -310,19 +320,24 @@ pub mod platform {
 
     pub fn firefox_default_path() -> Option<PathBuf> {
         if let Some(path) = find_binary("firefox-bin") {
-            return Some(path)
+            return Some(path);
         }
         let home = env::home_dir();
         for &(prefix_home, trial_path) in [
-            (false, "/Applications/Firefox.app/Contents/MacOS/firefox-bin"),
-            (true, "Applications/Firefox.app/Contents/MacOS/firefox-bin")].iter() {
+            (
+                false,
+                "/Applications/Firefox.app/Contents/MacOS/firefox-bin",
+            ),
+            (true, "Applications/Firefox.app/Contents/MacOS/firefox-bin"),
+        ].iter()
+        {
             let path = match (home.as_ref(), prefix_home) {
                 (Some(ref home_dir), true) => home_dir.join(trial_path),
                 (None, true) => continue,
-                (_, false) => PathBuf::from(trial_path)
+                (_, false) => PathBuf::from(trial_path),
             };
             if path.exists() {
-                return Some(path)
+                return Some(path);
             }
         }
         None
@@ -345,7 +360,7 @@ pub mod platform {
         let opt_path = firefox_registry_path().unwrap_or(None);
         if let Some(path) = opt_path {
             if path.exists() {
-                return Some(path)
+                return Some(path);
             }
         };
         find_binary("firefox.exe")
@@ -355,9 +370,10 @@ pub mod platform {
         let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
         for subtree_key in ["SOFTWARE", "SOFTWARE\\WOW6432Node"].iter() {
             let subtree = try!(hklm.open_subkey_with_flags(subtree_key, KEY_READ));
-            let mozilla_org = match subtree.open_subkey_with_flags("mozilla.org\\Mozilla", KEY_READ) {
+            let mozilla_org = match subtree.open_subkey_with_flags("mozilla.org\\Mozilla", KEY_READ)
+            {
                 Ok(val) => val,
-                Err(_) => continue
+                Err(_) => continue,
             };
             let current_version: String = try!(mozilla_org.get_value("CurrentVersion"));
             let mozilla = try!(subtree.open_subkey_with_flags("Mozilla", KEY_READ));
@@ -372,7 +388,7 @@ pub mod platform {
                         if let Ok(bin_subtree) = mozilla.open_subkey_with_flags(bin_key, KEY_READ) {
                             let path: Result<String, _> = bin_subtree.get_value("PathToExe");
                             if let Ok(path) = path {
-                                return Ok(Some(PathBuf::from(path)))
+                                return Ok(Some(PathBuf::from(path)));
                             }
                         }
                     }
@@ -402,7 +418,7 @@ pub mod platform {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_arg_name, is_profile_arg};
+    use super::{is_profile_arg, parse_arg_name};
 
     fn parse(arg: &str, name: Option<&str>) {
         let result = parse_arg_name(arg);
