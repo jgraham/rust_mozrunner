@@ -98,6 +98,7 @@ impl From<PrefReaderError> for RunnerError {
 #[derive(Debug)]
 pub struct FirefoxProcess {
     process: Child,
+    profile: Profile
 }
 
 impl RunnerProcess for FirefoxProcess {
@@ -220,7 +221,10 @@ impl Runner for FirefoxRunner {
 
         info!("Running command: {:?}", cmd);
         let process = cmd.spawn()?;
-        Ok(FirefoxProcess { process: process })
+        Ok(FirefoxProcess {
+            process: process,
+            profile: self.profile
+        })
     }
 }
 
